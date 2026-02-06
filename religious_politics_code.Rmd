@@ -1,0 +1,312 @@
+---
+title: "Religiosity, Caste, and Gender as Predictors of BJP Support in India"
+author: "Sreya Gonugunta"
+date: "2025-03-09"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+library("Rmisc")
+library("tidyverse")
+library("knitr")
+library("CGPfunctions")
+library("dotwhisker")
+library("gtsummary")
+library("janitor")
+library("expss")
+library("dplyr")
+library("kableExtra")
+library("ggplot2")
+library("pander")
+```
+
+# 1. Data Preparation 
+## Loading data 
+Data Source: Pew Research Center, "Religion in India: Tolerance and Segregation" (2021)
+Survey of 29,999 Indian adults conducted from November 17, 2019 to March 23, 2020. 
+```{r, echo=FALSE, warning=FALSE, message=FALSE, include=FALSE}
+prd <- read.csv("data/india_relgion_data_pew.csv")
+```
+
+## Renamed key variables for readability 
+```{r}
+prd <- prd %>% 
+  dplyr::rename(religion = QRELSING,
+                caste = QCASTE,
+                gender = QGEN,
+                vote = Q77arec,
+                age_grp = QAGErec,
+                language = QMLangRec,
+                opinion_bjp = QPTY2a,
+                opinion_congress = QPTY2b,
+                political_party_closeness = QPTYrec,
+                rel_books = Q50,
+                rel_shows = Q39a)
+```
+
+## Recode vote and caste
+
+Vote: BJP (1), INC (2), Other (3), everything else NA
+Caste: General (1), SC (2), ST (3), OBC (4)
+```{r}
+prd$vote_recode <- recode(prd$vote, 1~1, 2~2, 24~3, 994 %thru% 999 ~ NA)
+prd$caste_recode <- recode(prd$caste, 1~1, 2~2, 3~3, 4:5~4, 96:99 ~ NA)
+```
+
+## Clean missing values across key variables 
+98 = Don't know and 99 = Refused
+```{r}
+vars_to_clean <- c("rel_books", "rel_shows", "religion", "caste")
+
+prd <- prd %>%
+  mutate(across(all_of(vars_to_clean), ~ na_if(.,98))) %>% 
+  mutate(across(all_of(vars_to_clean), ~ na_if(.,99))) 
+```
+
+\newpage 
+
+# 2. Religiosity Index Construction 
+
+Questions Q50 (reading religious books) and Q39a (watching religious programs) capture personal religious engagement outside of community rituals. Often attending temple or being part of religious events are seen both as religious behavior and social activities. While a person themselves might not be very religious, they might attend temple and religious events to be a part of a large community. However, if a person is willingly engaging in religious solitary activities, like watching or reading religious programs, it becomes a stronger signal of religious commitment. 
+
+## Collapse frequency scales
+
+1 = Most days, 2 = Few times/month, 3 = Few times/year, 4 = Never
+```{r}
+prd$rel_books_recoded <- recode(prd$rel_books, 1:2~1, 3:4~2, 5:6~3, 7~4) 
+prd$rel_shows_recoded <- recode(prd$rel_shows, 1:2~1, 3:4~2, 5:6~3, 7~4) 
+```
+
+## Collapse into four-level index based on most common behavioral profiles
+Something to note is that in the future, shows as a form of religious engagement might have to be weighed more heavily as there are time, education, and monetary constraints for engaging with religious books for many people.
+```{r}
+prd$religiosity_sum <- prd$rel_books_recoded + prd$rel_shows_recoded
+prd$religiosity_index_recoded <- recode(prd$religiosity_sum, 
+                                 2:3 ~ 1,   # Highly Religious
+                                 4:5 ~ 2,   # Moderately Religious  
+                                 6:7 ~ 3,   # Minimally Religious
+                                 8   ~ 4)   # Not Religious
+```
+\newpage 
+
+# 3. Filter to Hindu Respondents and Label Variables
+```{r}
+prd_hindu <- prd %>%
+  filter(religion == 1)
+
+var_lab(prd_hindu$religiosity_index_recoded) <- "Religiosity Index"
+var_lab(prd_hindu$rel_books) <- "Religious Books"
+var_lab(prd_hindu$rel_shows) <- "Religious Shows"
+var_lab(prd_hindu$vote_recode) <- "Vote"
+var_lab(prd_hindu$caste_recode) <- "Caste"
+
+val_lab(prd_hindu$religiosity_index_recoded) <- c("Highly" = 1, "Mostly" = 2, "Minimally" = 3, "Not" = 4)
+val_lab(prd_hindu$rel_books) <- c("Many Times a Week" = 1, "Couple Times a Month" = 2, "Few Times a Year" = 3, "Never" = 4)
+val_lab(prd_hindu$rel_shows) <- c("Many Times a Week" = 1, "Couple Times a Month" = 2, "Few Times a Year" = 3, "Never" = 4)
+val_lab(prd_hindu$vote_recode) <- c("BJP" = 1, "INC" = 2, "Other" = 3)
+val_lab(prd_hindu$caste_recode) <- c("General" = 1, "SC" = 2, "ST" = 3, "OBC" = 4)
+```
+
+\newpage
+
+# 4. Analysis: Religiosity x Vote x Caste
+
+## Three-way crosstab: Does religiosity predict BJP support across all castes?
+Higher religiosity correlates with BJP support across all castes. Among highly religious General caste respondents, 67% voted BJP compared to 48% of non-religious General caste respondents. The pattern is strongest among OBCs, where 74% of highly religious respondents voted BJP compared to just 44% of non-religious respondents. Among SCs, 62% of highly religious respondents voted BJP versus 38% of non-religious respondents. The ST caste is a notable exception as highly religious ST respondents supported BJP at 68%, while non-religious ST respondents also supported BJP at 65%. The similar percentage of support suggests that factors other than religiosity are driving ST voting behavior. A potential reason could be the BJP's efforts in increasing government and education quotas for STs, however, more research is needed. Across all castes, INC and Other parties gained vote share as religiosity decreased.
+
+```{r}
+cro_rpct(prd_hindu$religiosity_index_recoded,
+         prd_hindu$vote_recode,
+         prd_hindu$caste_recode)
+```
+
+## Graph for BJP Vote Share Across All Castes
+```{r, fig.width=9, fig.height=5.5}
+caste_plot_data <- data.frame(
+  religiosity = factor(rep(c("Highly", "Mostly", "Minimally", "Not"), 4),
+                       levels = c("Highly", "Mostly", "Minimally", "Not")),
+  caste = rep(c("General", "OBC", "SC", "ST"), each = 4),
+  bjp_pct = c(67.4, 61.8, 57.0, 48.4,
+              73.9, 67.2, 58.3, 43.7,
+              62.1, 56.9, 47.5, 37.5,
+              68.4, 65.9, 54.7, 64.5)
+)
+
+ggplot(caste_plot_data, aes(x = religiosity, y = bjp_pct, 
+                            color = caste, group = caste)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("General" = "#2b8c5a", 
+                                "OBC" = "#e8843c", 
+                                "SC" = "#7b68ae", 
+                                "ST" = "#c74e5a")) +
+  scale_y_continuous(limits = c(30, 80), 
+                     labels = function(x) paste0(x, "%")) +
+  labs(title = "BJP Vote Share by Religiosity Level Across Castes",
+       subtitle = "Among Hindu respondents (Pew 2021)",
+       x = "Religiosity Index",
+       y = "BJP Vote Share (%)",
+       color = "Caste") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+```
+
+# 5. Analysis: Religiosity X Vote X Gender
+
+## Adding gender variable
+```{r}
+prd_hindu$gender_recoded <- recode(prd_hindu$gender, 1~1, 2~2)
+var_lab(prd_hindu$gender_recoded) <- "Gender"
+val_lab(prd_hindu$gender_recoded) <- c("Male" = 1, "Female" = 2)
+```
+
+## Gender composition within each religiosity-party group
+```{r}
+cro_rpct(prd_hindu$religiosity_index_recoded,
+         prd_hindu$gender_recoded,
+         prd_hindu$vote_recode)
+```
+\newpage
+
+# 6. Visualization: Vote share by religiosity, split by gender 
+The religiosity-BJP pattern holds for both genders, but women show higher support for "Other" parties across most religiosity levels. Also, BJP loses around 20 percentage points between highly religious and non-religious voters for both men (68% to 47%) and women (68% to 47%).
+## Combined
+```{r}
+PlotXTabs2(prd_hindu, religiosity_index_recoded, vote_recode,
+           title = "Vote Share by Religiosity (All Hindu Respondents)",
+           xlab = "Religiosity Index", ylab = "Vote Share")
+```
+\newpage
+
+## Men only
+```{r}
+prd_hindu_men <- prd_hindu %>% filter(gender_recoded == 1)
+PlotXTabs2(prd_hindu_men, religiosity_index_recoded, vote_recode,
+           title = "Vote Share by Religiosity (Men)",
+           xlab = "Religiosity Index", ylab = "Vote Share")
+```
+\newpage
+
+## Women only
+```{r}
+prd_hindu_women <- prd_hindu %>% filter(gender_recoded == 2)
+PlotXTabs2(prd_hindu_women, religiosity_index_recoded, vote_recode,
+           title = "Vote Share by Religiosity (Women)",
+           xlab = "Religiosity Index", ylab = "Vote Share")
+```
+\newpage
+
+## Graph for comparing gendered BJP Vote Share
+```{r, fig.width=9, fig.height=5.5}
+gender_plot_data <- data.frame(
+  religiosity = factor(rep(c("Highly", "Mostly", "Minimally", "Not"), 2),
+                       levels = c("Highly", "Mostly", "Minimally", "Not")),
+  gender = rep(c("Men", "Women"), each = 4),
+  bjp_pct = c(68, 65, 56, 47,
+              68, 61, 53, 47)
+)
+
+ggplot(gender_plot_data, aes(x = religiosity, y = bjp_pct, 
+                             color = gender, group = gender)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Men" = "#2b8c5a", 
+                                "Women" = "#7b68ae")) +
+  scale_y_continuous(limits = c(30, 80), 
+                     labels = function(x) paste0(x, "%")) +
+  labs(title = "BJP Vote Share by Religiosity Level Across Gender",
+       subtitle = "Among Hindu respondents (Pew 2021)",
+       x = "Religiosity Index",
+       y = "BJP Vote Share (%)",
+       color = "Gender") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+```
+
+## Graph for compaing gendered INC Vote Share
+```{r, fig.width=9, fig.height=5.5}
+inc_plot_data <- data.frame(
+  religiosity = factor(rep(c("Highly", "Mostly", "Minimally", "Not"), 2),
+                       levels = c("Highly", "Mostly", "Minimally", "Not")),
+  gender = rep(c("Men", "Women"), each = 4),
+  inc_pct = c(16, 16, 19, 18,
+              15, 16, 17, 21)
+)
+
+ggplot(inc_plot_data, aes(x = religiosity, y = inc_pct, 
+                          color = gender, group = gender)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Men" = "#2b8c5a", 
+                                "Women" = "#7b68ae")) +
+  scale_y_continuous(limits = c(10, 30), 
+                     labels = function(x) paste0(x, "%")) +
+  labs(title = "INC Vote Share by Religiosity Level Across Gender",
+       subtitle = "Among Hindu respondents (Pew 2021)",
+       x = "Religiosity Index",
+       y = "INC Vote Share (%)",
+       color = "Gender") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+```
+
+## Graph for compaing gendered Other Vote Share
+```{r, fig.width=9, fig.height=5.5}
+other_plot_data <- data.frame(
+  religiosity = factor(rep(c("Highly", "Mostly", "Minimally", "Not"), 2),
+                       levels = c("Highly", "Mostly", "Minimally", "Not")),
+  gender = rep(c("Men", "Women"), each = 4),
+  other_pct = c(16, 18, 25, 34,
+                17, 23, 30, 33)
+)
+
+ggplot(other_plot_data, aes(x = religiosity, y = other_pct, 
+                            color = gender, group = gender)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Men" = "#2b8c5a", 
+                                "Women" = "#7b68ae")) +
+  scale_y_continuous(limits = c(10, 40), 
+                     labels = function(x) paste0(x, "%")) +
+  labs(title = "Other Party Vote Share by Religiosity Level Across Gender",
+       subtitle = "Among Hindu respondents (Pew 2021)",
+       x = "Religiosity Index",
+       y = "Other Party Vote Share (%)",
+       color = "Gender") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right",
+        panel.grid.minor = element_blank())
+```
+
+# 7. Analysis: Religiosity x Party Closeness x Gender
+Since Q77a only asks "who did you vote for in the last election", it is best to also ask the question (QPTY) "which party do you feel closest to?". The second question looks at the person's party identification rather than just looking at one election. 
+```{r}
+prd_hindu$party_close_recoded <- recode(
+  prd_hindu$political_party_closeness, 1~1, 2~2, 24~3, 98 %thru% 99 ~ NA
+)
+var_lab(prd_hindu$party_close_recoded) <- "Party Closeness"
+val_lab(prd_hindu$party_close_recoded) <- c("BJP" = 1, "INC" = 2, "Others" = 3)
+```
+
+## Three-way crosstab: religiosity x gender x party closeness
+Party closeness also seems to mirror vote choice patterns. With highly religious respondents, BJP closeness is strong for both genders. As religiosity decreases, men maintain a slightly higher BJP affinity while women shift towards INC and Other parties, which suggests gender might impact the religiosity-partisanship relationship. 
+```{r}
+cro_rpct(prd_hindu$religiosity_index_recoded,
+         prd_hindu$gender_recoded,
+         prd_hindu$party_close_recoded)
+```
