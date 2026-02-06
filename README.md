@@ -36,8 +36,11 @@ This analysis is cross-sectional and descriptive and the correlations shown here
 
 # Reproducing This Analysis:
 The full R code is in religious_politics_code.Rmd
+
 To run it: Download the Pew Research dataset from this link: https://www.pewresearch.org/religion/2021/06/29/religion-in-india-tolerance-and-segregation/
+
 Place the CSV in a data/folder at the root of the repo as india_religion_data_pew.csv
+
 Then open the .Rmd file in RStudio and knit 
 
 
